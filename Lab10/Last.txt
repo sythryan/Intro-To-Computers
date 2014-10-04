@@ -1,0 +1,4 @@
+sale zagnut 7
+purchase valomilk 5
+sale chunky 8
+purchase skybar 20

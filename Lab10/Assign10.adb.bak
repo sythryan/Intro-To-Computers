@@ -1,0 +1,198 @@
+with Ada.Text_IO;
+with Ada.IO_Exceptions;
+with Ada.Integer_Text_IO;
+with Ada.Direct_IO;
+procedure Assign10 is
+-- Written by Syth Ryan
+--
+-- This program computes the initial and ending inventory
+-- of a group of candy bars
+--
+-- Input
+-- Name of the inventory file
+-- Name of the file containing this week's transactions
+--
+-- Output
+-- Prompts and error messages for entering file names
+-- A table displaying the inventory at the beginning of the week
+-- A table displaying the inventory at the end of the week
+--
+-- Assumptions
+   -- Enumeration types
+   type Bar_Type is (Chunky, Skybar, Valomilk, Zagnut);
+   type Transaction_Type is (Sale, Purchase);
+
+   -- Instantiate Enumeration I/O
+   package Bar_IO is new Ada.Text_IO.Enumeration_IO (Enum => Bar_Type);
+   package Transaction_IO is new Ada.Text_IO.Enumeration_IO (Enum => Transaction_Type);
+
+   package File_IO is new Ada.Direct_IO (Element_Type => Natural);
+   use type File_IO.Count;     -- Make operators directly visible
+   subtype Count_Type is File_IO.Count; -- A synonym for clarity
+
+-------------------------------------------------------------------------------
+   -- Display Table
+   procedure Display_Table (Bar_File : in File_IO.File_Type) is
+
+      Amount : Natural;        -- Amount of one bar
+      Bar    : Bar_Type;       -- Type of bar for the amount being displayed
+
+      Position : Count_Type;   -- Where to get amount from
+
+   begin
+      Ada.Text_IO.Put_Line ("--------------------------");
+      Ada.Text_IO.New_Line;
+
+      Position := 1;
+      Bar      := Bar_Type'First;
+
+      -- Display all four bars and their amounts
+      -- Each iteration, Display one bar and amount
+      for Index in Bar_Type'First .. Bar_Type'Last loop
+         Bar_IO.Put (Item => Bar,
+                    Width => 12);
+         File_IO.Read (File => Bar_File,
+                       Item => Amount,
+                       From => Position);
+
+         Ada.Integer_Text_IO.Put (Item => Amount,
+                                 Width => 10);
+         Ada.Text_IO.New_Line;
+         if Bar = Bar_Type'Last then
+            null;
+         else
+            Bar := Bar_Type'Succ (Bar);
+         end if;
+         Position := Position + 1;
+      end loop;
+
+      Ada.Text_IO.New_Line;
+      Ada.Text_IO.Put_Line ("--------------------------");
+   end Display_Table;
+-------------------------------------------------------------------------------
+   procedure Update (Amount      : out Natural;
+                     New_Amount  : in Natural;
+                     Bar         : in Bar_Type;
+                     Transaction : in Transaction_Type;
+                     Bar_File    : in out File_IO.File_Type) is
+
+      Position    : Count_Type;   -- Positon in file to read from and write to
+      Bar_Pos     : Natural;      -- Which bar to select
+
+   begin
+      Bar_Pos := 1;
+      -- Determine and update all bars
+      -- Each iteration, update one bar
+      for Pos in Bar_Type'First .. Bar_Type'Last loop
+         if Bar = Bar_Type'Val (Bar_Pos) then
+            Position := Count_Type (Bar_Pos);
+         end if;
+         File_IO.Read (File => Bar_File,
+                       Item => Amount,
+                       From => Position);
+         -- Update the amount
+         if Transaction = Sale then
+            Amount := Amount - New_Amount;
+         else   -- Purchase
+            Amount := Amount + New_Amount;
+         end if;
+
+         File_IO.Write (File => Bar_File,
+                        Item => Amount,
+                        To   => Position);
+      end loop;
+   end Update;
+
+-------------------------------------------------------------------------------
+   procedure Transactions (Bar_File : in out File_IO.File_Type;
+                           Trans_File : in Ada.Text_IO.File_Type) is
+
+      Transaction : Transaction_Type;   -- Type of transaction
+      Bar         : Bar_Type;           -- Type of bar
+      Amount      : Natural;            -- Amount of bars
+      New_Amount  : Natural;            -- Amount from transaction file
+
+   begin
+      Transaction_Loop :
+      loop
+         -- Get transaction type
+         Transaction_IO.Get (File => Trans_File,
+                             Item => Transaction);
+
+         exit Transaction_Loop when Ada.Text_IO.End_Of_File (Trans_File);
+         -- Get bar and amount
+         Bar_IO.Get (File => Trans_File,
+                     Item => Bar);
+         Ada.Integer_Text_IO.Get (File => Trans_File,
+                                  Item => New_Amount);
+         -- Update inventory
+         Update (Amount      => Amount,
+                 New_Amount  => New_Amount,
+                 Bar         => Bar,
+                 Transaction => Transaction,
+                 Bar_File    => Bar_File);
+      end loop Transaction_Loop;
+
+   end Transactions;
+
+-------------------------------------------------------------------------------
+
+   -- Variables
+   File_Name : String (1 .. 50);        -- Name of the file
+   Length    : integer range 0 .. 50;   -- and its length
+
+   Bar_File   : File_IO.File_Type;      -- Inventory file
+   Trans_File : Ada.Text_IO.File_Type;  -- Transaction file
+
+begin
+
+   -- Prepare the input file
+   loop      -- Get a valid file name
+      begin  -- Each iteration, check one file name
+         Ada.Text_IO.Put_Line ("Enter the file name of te initial inventory");
+         Ada.Text_IO.Get_Line (Item => File_Name,
+                               Last => Length);
+         File_IO.Open (File => Bar_File,
+                       Mode => File_IO.Inout_File,
+                       Name => File_Name (1 .. Length));
+         exit;
+      exception
+         when Ada.IO_Exceptions.Name_Error =>
+            Ada.Text_IO.Put_Line ("Invalid file name");
+      end;
+   end loop;
+
+
+   -- Display the initial inventory table
+   Ada.Text_IO.New_Line (3);
+   Ada.Text_IO.Put_Line ("The beginning inventory is");
+   Display_Table (Bar_File => Bar_File);
+
+   -- Prepare the transaction file
+   loop      -- Get a valid file name
+      begin  -- Each iteration, check one file name
+         Ada.Text_IO.Put_Line ("Enter the file name with this week's transactions");
+         Ada.Text_IO.Get_Line (Item => File_Name,
+                               Last => Length);
+         Ada.Text_IO.Open (File => Trans_File,
+                           Mode => Ada.Text_IO.In_File,
+                           Name => File_Name (1 .. Length));
+         exit;
+      exception
+         when Ada.IO_Exceptions.Name_Error =>
+            Ada.Text_IO.Put_Line ("Invalid file name");
+      end;
+   end loop;
+
+   -- Process the transactions
+   Transactions (Bar_File   => Bar_File,
+                 Trans_File => Trans_File);
+
+   -- Display ending inventory table
+   Ada.Text_IO.New_Line (3);
+   Ada.Text_IO.Put_Line ("The ending inventory is");
+   Display_Table (Bar_File => Bar_File);
+   -- Close Files
+   Ada.Text_IO.Close (Trans_File);
+   File_IO.Close (Bar_File);
+end Assign10;
